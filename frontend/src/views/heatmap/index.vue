@@ -82,7 +82,7 @@ import {
 import type { EntryRow } from '@/data/types'
 
 const meta = moduleMeta('heatmap')
-const columns = ["方案编号", "目标页面", "点击热力图", "滚动热力图", "注意力热力图", "时间分段", "设备类型", "导出分辨率"]
+const columns = ["方案编号", "目标页面", "方案版本", "点击热力图", "滚动热力图", "注意力热力图", "时间分段", "设备类型", "导出分辨率"]
 const actions = ["提交方案评审", "启用方案", "归档方案"]
 const statuses = ["草稿", "方案评审中", "已启用", "已归档"]
 const stats = [{"label": "热力方案总数", "value": 0}, {"label": "已启用方案", "value": 0}, {"label": "评审中方案", "value": 0}]

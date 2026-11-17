@@ -1,6 +1,37 @@
 import { MODULE_BY_KEY } from '@/data/modules'
-import { allRows, listRows, resetRows, saveRows } from '@/data/local-store'
-import type { ActionResult, EntryRow, ModuleMeta, OverviewResult, PageResult } from '@/data/types'
+import {
+  allRows,
+  jointState,
+  listRows,
+  resetRows,
+  saveJointState,
+  saveRows,
+} from '@/data/local-store'
+import {
+  arbitrateJointConflict,
+  buildJointTaskPanel,
+  buildMatchPairs,
+  buildScrollReviewList,
+  issueJointReports,
+  lookupJointCurve,
+} from '@/data/joint-domain'
+import type {
+  ActionResult,
+  ArbitrationResult,
+  EntryRow,
+  JointCatalog,
+  JointConflictInput,
+  JointIssueRequest,
+  JointIssueResult,
+  JointMatchPair,
+  JointReport,
+  JointReportBundle,
+  JointTaskPanel,
+  ModuleMeta,
+  OverviewResult,
+  PageResult,
+  ScrollReviewItem,
+} from '@/data/types'
 
 // 会写进数据的「往回走」动作：命中就把这条记录标成异常态，看板上能一眼看出来。
 const NEGATIVE_ACTIONS = ['撤销', '作废', '拒绝', '驳回', '停用', '忽略', '下线', '回滚']
@@ -60,6 +91,63 @@ export function resetModule(key: string): PageResult {
   resetRows(key)
   return listEntries(key)
 }
+
+/* ===== 页面热力浏览联合数据报告：跨模块读取与签发 ===== */
+
+/** 从同一份持久化数据里取热力方案与浏览深度两条曲线，供联合报告按「页面 + 设备」匹配。 */
+export function loadJointCatalog(): JointCatalog {
+  return {
+    heatmaps: listRows('heatmap').map((row) => ({ ...row })),
+    scrolls: listRows('scrollmap').map((row) => ({ ...row })),
+  }
+}
+
+/** 诊断入口：每个热力方案能否匹配到同页面同设备的完整深度曲线。 */
+export function listJointMatches(): JointMatchPair[] {
+  return buildMatchPairs(loadJointCatalog())
+}
+
+/** 签发联合报告：两个设备版本并发到达时只接受一份匹配完整的报告，拒绝路径不写库。 */
+export function issueJointReport(requests: JointIssueRequest[]): JointIssueResult {
+  const catalog = loadJointCatalog()
+  const { state, result } = issueJointReports(jointState(), catalog, requests)
+  if (state !== jointState() && result.writtenCount > 0) {
+    saveJointState(state)
+  }
+  return result
+}
+
+/** 浏览深度复核清单：按「页面 + 设备」恢复曲线与曝光率，缺匹配时只读占位不借用别的设备。 */
+export function listScrollReviews(filters: { page?: string; device?: string } = {}): ScrollReviewItem[] {
+  return buildScrollReviewList(jointState(), loadJointCatalog(), filters)
+}
+
+/** 页面设备组合的唯一读取入口：匹配不上就返回 null，绝不回退到同页面的其它设备。 */
+export function readJointReport(page: string, device: string): JointReport | null {
+  return lookupJointCurve(jointState(), page, device)
+}
+
+/** 冲突仲裁：设备修正回执与旧联合报告重发同时到达，按策略写入并把回执写回入口。 */
+export function arbitrateJoint(input: JointConflictInput): ArbitrationResult {
+  const catalog = loadJointCatalog()
+  const { state, result } = arbitrateJointConflict(jointState(), catalog, input)
+  if (state !== jointState() && result.written) {
+    saveJointState(state)
+  }
+  return result
+}
+
+/** 任务面板：签发/仲裁后从这里返回复验，确认旧版本不会重新串页。 */
+export function loadJointTaskPanel(): JointTaskPanel {
+  return buildJointTaskPanel(jointState(), loadJointCatalog())
+}
+
+/** 全量读取联合报告（含已隔离），仅供任务面板与导出使用；页面曲线请走 readJointReport。 */
+export function listJointReports(): JointReport[] {
+  return [...jointState().reports].sort((left, right) => right.id.localeCompare(left.id))
+}
+
+export type { JointReportBundle }
 
 export function exportEntries(key: string): { filename: string; content: string } {
   const meta = moduleMeta(key)
